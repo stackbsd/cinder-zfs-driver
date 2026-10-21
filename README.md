@@ -28,12 +28,6 @@ A Cinder volume driver for FreeBSD that stores volumes as ZFS zvols.
 
 `zfs allow` delegation is needed for the dataset holding volumes, including `send` and `receive` for migration.
 
-To migrate volumes to a backend on another host, the cinder user needs an ssh key that the other host's cinder user trusts. On the receiving side, restrict that key to the receive helper:
-
-```
-command="cinder-zfs-receive --config-file /usr/local/etc/cinder/cinder.conf",restrict ssh-ed25519 AAAA... cinder@storage1
-```
-
 Remote export needs ctld running against the driver's config file:
 
 ```sh
@@ -52,4 +46,18 @@ zfs_sparse_volumes = true
 use_chap_auth = true
 # zfs_ctld_config = /var/db/cinder/ctl.conf
 # zfs_local_hosts = alias1,alias2
+# migration_ssh_config = /usr/local/etc/cinder/ssh_config
+```
+
+### Migration between hosts
+
+To migrate volumes to a backend on another host, the cinder user needs an ssh key.
+See the `migration_ssh_config` configuration opt. 
+
+The user on the receiving host needs `create,destroy,receive,refreservation` delegated on the dataset.
+
+Additionally you can lock down this user to only execute the receive command, for example (in `authorized_keys`):
+
+```
+command="cinder-zfs-receive --config-file /path/to/cinder.conf",restrict ssh-ed25519 AAAA...
 ```

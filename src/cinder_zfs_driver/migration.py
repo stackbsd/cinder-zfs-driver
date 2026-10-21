@@ -10,9 +10,12 @@ SSH = ('ssh', '-o', 'BatchMode=yes')
 SNAPSHOT = 'cinder-migrate'
 
 
-def remote(host, *words):
+def remote(host, *words, ssh_config=None):
     """Return the ssh command line running the receive helper on a host."""
-    return [*SSH, host, *words]
+    command = [*SSH]
+    if ssh_config:
+        command += ['-F', ssh_config]
+    return [*command, host, *words]
 
 
 def check_result(proc, err, what):

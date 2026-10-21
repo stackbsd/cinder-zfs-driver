@@ -186,6 +186,34 @@ class MigrateTestCase(unittest.TestCase):
             ('zfs', 'set', 'refreservation=none', REMOTE_DEST), self.zfs.calls
         )
 
+    def test_remote_move_uses_configured_ssh_config(self):
+        """A configured ssh config file is passed to ssh with -F."""
+        CONF.set_override(
+            'migration_ssh_config',
+            '/usr/local/etc/cinder/ssh_config',
+            group='backend_defaults',
+        )
+        self.addCleanup(
+            CONF.clear_override,
+            'migration_ssh_config',
+            group='backend_defaults',
+        )
+        self.migrate(make_host('storage2', 'tank/cinder'))
+        receiver = self.send.call_args[0][1]
+        self.assertEqual(
+            [
+                'ssh',
+                '-o',
+                'BatchMode=yes',
+                '-F',
+                '/usr/local/etc/cinder/ssh_config',
+            ],
+            receiver[:5],
+        )
+        self.assertEqual(
+            ['storage2', 'receive', 'zfs2', VOL_NAME], receiver[5:]
+        )
+
     def test_fqdn_destination_is_local(self):
         """The destination's FQDN still names this host."""
         self.migrate(make_host('storage1.example.com', 'zroot/other'))

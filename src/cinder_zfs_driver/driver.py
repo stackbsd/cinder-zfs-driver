@@ -44,6 +44,10 @@ zfs_opts = [
         default=[],
         help='Additional connector host names treated as this node.',
     ),
+    cfg.StrOpt(
+        'migration_ssh_config',
+        help='ssh configuration file used to reach other hosts for migration.',
+    ),
 ]
 
 CONF = cfg.CONF
@@ -581,7 +585,11 @@ class ZFSVolumeDriver(driver.VolumeDriver):
         else:
             group = volume_utils.extract_host(host['host']).partition('@')[2]
             receiver = migration.remote(
-                dest_host, 'receive', group, volume.name
+                dest_host,
+                'receive',
+                group,
+                volume.name,
+                ssh_config=self.configuration.migration_ssh_config,
             )
         snapshot = f'{source}@{migration.SNAPSHOT}'
         # clean any previous attempt
