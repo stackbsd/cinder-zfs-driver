@@ -10,25 +10,29 @@ A Cinder volume driver for FreeBSD that stores volumes as ZFS zvols.
 - Snapshots are ZFS snapshots, with deferred destroy while clones depend on them
 - Glance image download to a volume and volume upload to an image
 - Local attach to a nova-bhyve instance on the same host
-- Remote iSCSI volume export served by CTL
+- Remote iSCSI volume export served by CTL, attached on FreeBSD hosts with [os-brick-freebsd](https://github.com/stackbsd/os-brick-freebsd)
 - Sparse or fully reserved zvols on disk
+- Volume migration between two ZFS backends, using `zfs send` over ssh when the destination is another host
 
 ### Roadmap
 
-- Remote iSCSI attach / os-brick support
 - Snapshot export over iSCSI
 - Per-initiator ACLs, mutual CHAP and multipath portals
-- Volume migration between two backends using `zfs send` / `zfs receive`
 - Add support for NVMe over Fabrics remote attach
 
 ### Limitations
 
-- No remote attach / os-brick support so nova and the cinder backend must run on the same host
 - Remote snapshot connections are refused
 
 ## Host requirements
 
-`zfs allow` delegation is needed for the dataset holding volumes.
+`zfs allow` delegation is needed for the dataset holding volumes, including `send` and `receive` for migration.
+
+To migrate volumes to a backend on another host, the cinder user needs an ssh key that the other host's cinder user trusts. On the receiving side, restrict that key to the receive helper:
+
+```
+command="cinder-zfs-receive --config-file /usr/local/etc/cinder/cinder.conf",restrict ssh-ed25519 AAAA... cinder@storage1
+```
 
 Remote export needs ctld running against the driver's config file:
 

@@ -14,7 +14,7 @@ from oslo_config import cfg
 from oslo_log import log as logging
 from oslo_utils import units
 
-from cinder_zfs_driver import ctl
+from cinder_zfs_driver import ctl, migration
 
 LOG = logging.getLogger(__name__)
 
@@ -241,7 +241,7 @@ class ZFSVolumeDriver(driver.VolumeDriver):
             'zfs', 'list', '-Hp', '-o', 'available,used', dataset
         )
         available, used = (int(value) for value in out.split())
-        location_info = f'ZFSVolumeDriver:{self.hostname}:{dataset}'
+        location_info = f'{type(self).__name__}:{self.hostname}:{dataset}'
         pool = {
             'pool_name': self.backend_name,
             'total_capacity_gb': round((available + used) / units.Gi, 2),
@@ -553,8 +553,55 @@ class ZFSVolumeDriver(driver.VolumeDriver):
 
     @log_call
     def migrate_volume(self, context, volume, host):
-        """Report the volume as migrated in place."""
-        return True, None
+        """Send the zvol to another ZFS backend and drop it here."""
+        refused = (False, None)
+        if volume.status not in ('available', 'retyping'):
+            return refused
+        capabilities = host['capabilities']
+        try:
+            dest_type, dest_host, dest_dataset = capabilities[
+                'location_info'
+            ].split(':')
+        except (KeyError, ValueError):
+            return refused
+        if dest_type != type(self).__name__:
+            return refused
+        source = self._dataset(volume)
+        dest = f'{dest_dataset}/{volume.name}'
+        local = self._is_local_connector({'host': dest_host})
+        if local:
+            if dest == source:
+                LOG.error(
+                    'refusing to migrate %s onto its own dataset %s',
+                    volume.name,
+                    dest_dataset,
+                )
+                return refused
+            receiver = ['zfs', 'receive', dest]
+        else:
+            group = volume_utils.extract_host(host['host']).partition('@')[2]
+            receiver = migration.remote(
+                dest_host, 'receive', group, volume.name
+            )
+        snapshot = f'{source}@{migration.SNAPSHOT}'
+        # clean any previous attempt
+        if self._exists(snapshot):
+            self._execute('zfs', 'destroy', snapshot)
+        self._execute('zfs', 'snapshot', snapshot)
+        try:
+            migration.send(snapshot, receiver)
+            if local:
+                migration.finish_receive(
+                    self._execute,
+                    dest,
+                    capabilities.get('thin_provisioning_support', True),
+                )
+        except Exception:
+            self._execute('zfs', 'destroy', snapshot)
+            raise
+        self.remove_export(context, volume)
+        self.delete_volume(volume)
+        return True, {'provider_location': None, 'provider_auth': None}
 
     @log_call
     def update_migrated_volume(
