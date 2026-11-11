@@ -41,8 +41,9 @@ def send(snapshot, receiver):
         sender.stdout.close()
         _out, recv_err = proc.communicate()
         send_err = sender.stderr.read()
+    # check the receiver first as its exit makes zfs send fail with EPIPE
+    check_result(proc, recv_err + send_err, ' '.join(receiver))
     check_result(sender, send_err, f'sending {snapshot}')
-    check_result(proc, recv_err, ' '.join(receiver))
 
 
 def finish_receive(execute, dataset, sparse):

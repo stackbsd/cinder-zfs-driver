@@ -382,3 +382,18 @@ class SendTestCase(unittest.TestCase):
                 migration.send(SNAPSHOT, ['zfs', 'receive', LOCAL_DEST])
         self.assertIn('dataset exists', str(ctx.exception))
         sender.stdout.close.assert_called_once_with()
+
+    def test_receiver_failure_wins_over_broken_send(self):
+        """A receiver failure is reported when zfs send fails after it."""
+        sender = mock.MagicMock(returncode=1)
+        sender.__enter__.return_value = sender
+        sender.stderr.read.return_value = b'signal received\n'
+        receiver = mock.Mock(returncode=1)
+        receiver.communicate.return_value = (None, b'permission denied\n')
+        with mock.patch.object(
+            subprocess, 'Popen', side_effect=[sender, receiver]
+        ):
+            with self.assertRaises(exception.VolumeDriverException) as ctx:
+                migration.send(SNAPSHOT, ['zfs', 'receive', LOCAL_DEST])
+        self.assertIn('zfs receive', str(ctx.exception))
+        self.assertIn('permission denied', str(ctx.exception))
