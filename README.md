@@ -31,6 +31,7 @@ A Cinder volume driver for FreeBSD that stores volumes as ZFS zvols.
 Remote export needs ctld running against the driver's config file:
 
 ```sh
+touch /etc/ctl.conf
 sysrc ctld_flags="-f /var/db/cinder/ctl.conf" ctld_enable=YES
 service ctld start
 ```
