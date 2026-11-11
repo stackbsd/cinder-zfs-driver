@@ -55,7 +55,7 @@ use_chap_auth = true
 To migrate volumes to a backend on another host, the cinder user needs an ssh key.
 See the `migration_ssh_config` configuration opt. 
 
-The user on the receiving host needs `create,destroy,receive,refreservation` delegated on the dataset.
+The user on the receiving host needs `create,destroy,mount,receive,refreservation` delegated on the dataset.
 
 Additionally you can lock down this user to only execute the receive command, for example (in `authorized_keys`):
 
