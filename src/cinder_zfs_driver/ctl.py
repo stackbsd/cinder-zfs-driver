@@ -19,6 +19,7 @@ LISTEN_RE = re.compile(r'^[A-Za-z0-9.\[\]:-]+:[0-9]+$')
 
 PORTAL_GROUP = 'cinder'
 CTLD_PIDFILE = '/var/run/ctld.pid'
+SERIAL_LENGTH = 16
 
 
 def checked(value, pattern, what):
@@ -58,7 +59,6 @@ def render(exports, listen):
         '# rebuilt from the cinder database on every change.',
         '',
         f'portal-group "{PORTAL_GROUP}" {{',
-        '    discovery-auth-group no-authentication',
         f'    listen {listen}',
         '}',
     ]
@@ -70,9 +70,14 @@ def render(exports, listen):
             )
         else:
             lines.append('    auth-group no-authentication')
+        ident = export.volume_name.removeprefix('volume-')
         lines += [
             f'    portal-group "{PORTAL_GROUP}"',
-            f'    lun 0 {{ path "{export.device_path}" }}',
+            '    lun 0 {',
+            f'        path "{export.device_path}"',
+            f'        serial "{ident.replace("-", "")[:SERIAL_LENGTH]}"',
+            f'        device-id "{export.volume_name}"',
+            '    }',
             '}',
         ]
     return '\n'.join(lines) + '\n'
@@ -99,6 +104,12 @@ class CtlTable:
         """Withdraw an export."""
         self._exports.pop(volume_name, None)
         self._sync()
+
+    @lockutils.synchronized('cinder-zfs-ctl')
+    def refresh(self, volume_name):
+        """Have ctld read the size of an exported volume again."""
+        if volume_name in self._exports:
+            self._reload()
 
     def _sync(self):
         """Rewrite the file and reload ctld if the content changed."""
