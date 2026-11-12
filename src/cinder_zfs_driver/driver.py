@@ -329,6 +329,8 @@ class ZFSVolumeDriver(driver.VolumeDriver):
         self._execute(
             'zfs', 'set', f'volsize={new_size}G', self._dataset(volume)
         )
+        if volume.provider_location:
+            self._ctl().refresh(volume.name)
 
     @log_call
     def revert_to_snapshot(self, context, volume, snapshot):
@@ -392,8 +394,11 @@ class ZFSVolumeDriver(driver.VolumeDriver):
 
     @log_call
     def ensure_export(self, context, volume):
-        """Rebuild a remote export from the volume's provider fields."""
+        """Rebuild the export of a volume attached to another host."""
         if not volume.provider_location:
+            return
+        connectors = [a.connector for a in volume.volume_attachment]
+        if not any(c and not self._is_local_connector(c) for c in connectors):
             return
         username, password = self._chap_from(volume.provider_auth)
         self._ctl().add(

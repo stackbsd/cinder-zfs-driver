@@ -29,16 +29,18 @@ def make_volume(**kwargs):
         'id': VOL_ID,
         'provider_location': None,
         'provider_auth': None,
+        'volume_attachment': [],
     }
     fields.update(kwargs)
     return types.SimpleNamespace(**fields)
 
 
-def make_exported_volume():
+def make_exported_volume(connector=REMOTE):
     """Return a volume stub carrying remote-export provider fields."""
     return make_volume(
         provider_location=f'192.0.2.10:3260,1 {IQN} 0',
         provider_auth='CHAP chapuser chapsecret123',
+        volume_attachment=[types.SimpleNamespace(connector=connector)],
     )
 
 
@@ -164,9 +166,35 @@ class TestEnsureExport(ExportTestCase):
         self.assertIn('chap "chapuser" "chapsecret123"', text)
         reload.assert_called_once_with()
 
+    def test_volume_attached_locally_is_not_exported(self):
+        """Stale provider fields on a local attachment export nothing."""
+        for connector in (LOCAL, None):
+            self.driver.ensure_export(None, make_exported_volume(connector))
+        self.assertIsNone(self.driver._ctl_table)
+
     def test_without_provider_location_is_a_noop(self):
         """A volume with no export recorded needs nothing rebuilt."""
         self.driver.ensure_export(None, make_volume())
+        self.assertIsNone(self.driver._ctl_table)
+
+
+class TestExtend(ExportTestCase):
+    """extend_volume grows the zvol and the exported LUN."""
+
+    def test_exported_volume_reloads_ctld(self):
+        """Extending an exported volume has ctld read the new size."""
+        reload = self._wire_ctl()
+        volume = make_exported_volume()
+        self.driver.ensure_export(None, volume)
+        self.driver.extend_volume(volume, 2)
+        self.driver._execute.assert_called_once_with(
+            'zfs', 'set', 'volsize=2G', f'zroot/cinder/{VOL_NAME}'
+        )
+        self.assertEqual(2, reload.call_count)
+
+    def test_unexported_volume_does_not_engage_ctl(self):
+        """Extending a volume with no export only grows the zvol."""
+        self.driver.extend_volume(make_volume(), 2)
         self.assertIsNone(self.driver._ctl_table)
 
 

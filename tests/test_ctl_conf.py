@@ -30,17 +30,21 @@ class TestRender(unittest.TestCase):
         text = ctl.render([], '192.0.2.5:3260')
         self.assertIn('portal-group "cinder" {', text)
         self.assertIn('    listen 192.0.2.5:3260', text)
-        self.assertIn('    discovery-auth-group no-authentication', text)
+        self.assertNotIn('discovery-auth-group', text)
 
     def test_target_stanza(self):
         """Each export becomes one target with its zvol at LUN 0."""
         text = ctl.render([make_export()], '127.0.0.1:3260')
         self.assertIn(f'target "iqn.2010-10.org.openstack:{VOL_A}" {{', text)
         self.assertIn('    portal-group "cinder"', text)
-        self.assertIn(
-            f'    lun 0 {{ path "/dev/zvol/zroot/cinder/{VOL_A}" }}',
-            text,
-        )
+        self.assertIn(f'        path "/dev/zvol/zroot/cinder/{VOL_A}"', text)
+
+    def test_lun_identity_follows_the_volume(self):
+        """Each LUN carries a serial and device id from its volume."""
+        text = ctl.render([make_export()], '127.0.0.1:3260')
+        ident = VOL_A.removeprefix('volume-').replace('-', '')[:16]
+        self.assertIn(f'        serial "{ident}"', text)
+        self.assertIn(f'        device-id "{VOL_A}"', text)
 
     def test_chap_line_only_with_credentials(self):
         """CHAP renders when credentials exist, no-authentication otherwise."""
@@ -115,6 +119,17 @@ class TestCtlTable(unittest.TestCase):
         self.table.add(make_export(chap_username='u', chap_password='p1234'))
         self.assertIn('chap "u" "p1234"', self._read())
         self.assertEqual(2, self.reload.call_count)
+
+    def test_refresh_reloads_for_an_exported_volume(self):
+        """Refreshing an exported volume reloads ctld again."""
+        self.table.add(make_export())
+        self.table.refresh(VOL_A)
+        self.assertEqual(2, self.reload.call_count)
+
+    def test_refresh_ignores_an_unexported_volume(self):
+        """Refreshing a volume with no export does not reload ctld."""
+        self.table.refresh(VOL_A)
+        self.reload.assert_not_called()
 
     def test_remove_deletes_stanza(self):
         """Removing one export leaves the others in place."""
